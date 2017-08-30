@@ -1,0 +1,33 @@
+pexexlab.txt
+
+Part: Gather Instruction Traces
+
+Command: gdb --args ~eggert/bin64/bin/emacs-24.5 -batch -eval '(print (* 6997 -4398042316799 179))'
+Purpose: start the GDB to execute the emacs program
+
+Command: break Ftimes
+Purpose: set a break point at the instruction of the function Ftimes to debug
+
+Command: disassemble Ftimes
+Purpose: disassemble Ftimes to generate the assembly code for the function Ftimes
+
+Command: run
+Purpose: start to run the program with a break point set, the program will stop at the instruction of Ftimes
+
+Command: stepi (or ’si’)
+Purpose: execute the current line of code, and go to the next line
+
+Command: info registers $rdi/rbx/…
+Purpose: Start to examine the change of register values. Use the command to read the corresponding register (based on the assembly code that has been generated) value
+
+Command: x/x1w $rdi/rbx/…
+Purpose: To read the memory value at the address of the value that the register is holding. This helps us to read values for some specific instructions(such as push, pop, etc).
+
+Part: Examine Integer Overflow Handling
+
+Command: gcc -S -O2 testovf.c
+         gcc -S -O2 -fsanitize=undefined testovf.c
+         gcc -S -O2 -fwrapv testovf.c
+Purpose: Generate the three different assembly codes for the testovf function.
+
+

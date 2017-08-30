@@ -1,0 +1,145 @@
+Compiled with -o2:
+
+	.file	"testovf.c"
+	.text
+	.p2align 4,,15
+	.globl	testovf
+	.type	testovf, @function
+testovf:
+.LFB0:
+	.cfi_startproc
+	xorl	%eax, %eax
+	ret
+	.cfi_endproc
+.LFE0:
+	.size	testovf, .-testovf
+	.globl	big
+	.data
+	.align 8
+	.type	big, @object
+	.size	big, 8
+big:
+	.quad	9223372036854775807
+	.ident	"GCC: (GNU) 4.8.3 20140911 (Red Hat 4.8.3-9)"
+	.section	.note.GNU-stack,"",@progbits
+
+Compiled with -O2 -fsanitize=undefined:
+	.file	"testovf.c"
+	.section	.text.unlikely,"ax",@progbits
+.LCOLDB0:
+	.text
+.LHOTB0:
+	.p2align 4,,15
+	.globl	testovf.
+	.type	testovf, @function
+testovf:
+.LFB0:
+	.cfi_startproc
+	pushq	%rbp
+	.cfi_def_cfa_offset 16
+	.cfi_offset 6, -16
+	pushq	%rbx
+	.cfi_def_cfa_offset 24
+	.cfi_offset 3, -24
+	movabsq	$9223372036854775807, %rdx
+	subq	$8, %rsp
+	.cfi_def_cfa_offset 32
+	movq	big(%rip), %rbx
+	movq	%rbx, %rbp
+	addq	%rdx, %rbp
+	jo	.L6
+.L2:
+	cmpq	%rbp, %rbx
+	setg	%al
+	addq	$8, %rsp
+	.cfi_remember_state
+	.cfi_def_cfa_offset 24
+	popq	%rbx
+	.cfi_def_cfa_offset 16
+	popq	%rbp
+	.cfi_def_cfa_offset 8
+	ret
+.L6:
+	.cfi_restore_state
+	movq	%rbx, %rsi
+	movl	$.Lubsan_data0, %edi
+	call	__ubsan_handle_add_overflow
+	jmp	.L2
+	.cfi_endproc
+.LFE0:
+	.size	testovf, .-testovf
+	.section	.text.unlikely
+.LCOLDE0:
+	.text
+.LHOTE0:
+	.section	.rodata.str1.1,"aMS",@progbits,1
+.LC1:
+	.string	"testovf.c"
+	.data
+	.align 16
+	.type	.Lubsan_data0, @object
+	.size	.Lubsan_data0, 24
+.Lubsan_data0:
+	.quad	.LC1
+	.long	7
+	.long	13
+	.quad	.Lubsan_type0
+	.align 2
+	.type	.Lubsan_type0, @object
+	.size	.Lubsan_type0, 15
+.Lubsan_type0:
+	.value	0
+	.value	13
+	.string	"'long int'"
+	.globl	big
+	.align 8
+	.type	big, @object
+	.size	big, 8
+big:
+	.quad	9223372036854775807
+	.ident	"GCC: (GNU) 5.2.0"
+	.section	.note.GNU-stack,"",@progbits
+
+
+Compiled with -o2 -fwrapv:
+	.file	"testovf.c"
+	.section	.text.unlikely,"ax",@progbits
+.LCOLDB0:
+	.text
+.LHOTB0:
+	.p2align 4,,15
+	.globl	testovf
+	.type	testovf, @function
+testovf:
+.LFB0:
+	.cfi_startproc
+	movq	big(%rip), %rdx
+	movabsq	$9223372036854775807, %rax
+	addq	%rdx, %rax
+	cmpq	%rax, %rdx
+	setg	%al
+	ret
+	.cfi_endproc
+.LFE0:
+	.size	testovf, .-testovf
+	.section	.text.unlikely
+.LCOLDE0:
+	.text
+.LHOTE0:
+	.globl	big
+	.data
+	.align 8
+	.type	big, @object
+	.size	big, 8
+big:
+	.quad	9223372036854775807
+	.ident	"GCC: (GNU) 5.2.0"
+	.section	.note.GNU-stack,"",@progbits
+
+Under gcc -O2, the register rax is set to zero. big+LONG_MAX is definitely greater than big in real arithmetic calculations, and thus overflow is not considered in this case and we don’t have to compare big and big+LONG_MAX in this case.
+
+Under gcc -O2 -fsanitize=undefined, in the assembly code, there is a “jo” instruction, meaning jump on overflow. The code examines the overflow case, and it has a function, __ubsan_handle_add_overflow, to handle the overflow. After that, it compares the two values.
+
+Under gcc -O2 -fwrapv, in the assembly code, it stores big+LONG_MAX in the register rax, and stores big in the register rdx, Then the compiler takes the two values into a comparison directly and set the overflow flag.
+
+
