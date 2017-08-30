@@ -1,0 +1,28 @@
+answers
+
+1.
+The reason that it did not produce the correct result is behind this line:
+   0x00000000005436af <arith_driver+431>lisp.h:700	lea    0x0(,%rbp,4),%rax  
+
+It multiplies the value stored in rbp by 4 and stored the new value into the register rax, whcih occurs the overflow (rax=0xce39231c6f4c71bc). Then it returns the value in rax, the wrong result.
+
+2.
+According to data.c, the most-positive-fixnum should be Vmost-positive-fixnum, and Vmost-positive-fixnum should be MOST_POSITIVE_FIXNUM >> INTTYPEBITS. By lisp.h, INTTYPEBITS = 2 and MOST_POSITIVE_FIXNUM is 0x7fffffffffffffff, and thus its output is 0x1fffffffffffffff, which is exactly 2305843009213693951.
+
+3.
+Multiplying both most positive fixnum would definitely incurs overflow. In this case, gcc will use an INTMASK to handle the overflow case. accum = ab&INTMASK.
+
+INTMASK is (EMACS_INT_MAX >> (INTTYPEBITS - 1)), and INTMASK is 0x3fffffff by our calculation. Thus the value returned is 0x00000001 & 0x3fffffff, which is just 1.
+	
+
+4.
+Under -fsanitize=undefined, when overflow incurs, gcc will call a function to handle the overflow and display a warning message. In this case, since it is a overflow, and a warning will be displayed.
+
+5.
+Under -fwrapv, the gcc code does not detect overflow. Since in this case, the number incurs overflow, and the gcc will return a wrong result.
+
+6.
+Under -fwrapv, if we use two’s complement to represent numbers, we can easily avoid the overflow case. Then, we do not have to conduct an overflow check for our program.
+
+7.
+The -fwrapv method does not take an overflow check, while the -fsanitize=undefined method takes some resources to do the overflow check. Such a difference is quite significant in case of program efficiency.
